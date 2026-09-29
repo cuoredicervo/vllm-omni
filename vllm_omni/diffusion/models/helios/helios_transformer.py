@@ -29,6 +29,7 @@ from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.cache.cachedit import CacheDiTAdapterConfig
 from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelOutput
 from vllm_omni.diffusion.layers.rope import RotaryEmbeddingWan
+from vllm_omni.diffusion.models.helios.fused_ops import layer_norm_two_population_affine
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import (
@@ -49,6 +50,34 @@ def pad_for_3d_conv(x, kernel_size):
 
 def center_down_sample_3d(x, kernel_size):
     return F.avg_pool3d(x, kernel_size, stride=kernel_size)
+
+
+def norm_with_modulation(
+    norm: FP32LayerNorm,
+    hidden_states: torch.Tensor,
+    scale: torch.Tensor,
+    shift: torch.Tensor,
+    history_length: int,
+) -> torch.Tensor:
+    """Apply Helios modulation, fusing its affine into LayerNorm on Ascend."""
+    if hidden_states.device.type != "npu" or hidden_states.shape[0] != 1:
+        return norm(hidden_states.float()) * (1 + scale) + shift
+
+    scale_history = 1 + scale[:, :1] if history_length else None
+    shift_history = shift[:, :1] if history_length else None
+    current_row = history_length if history_length else 0
+    scale_current = 1 + scale[:, current_row : current_row + 1]
+    shift_current = shift[:, current_row : current_row + 1]
+    return layer_norm_two_population_affine(
+        hidden_states,
+        scale_history,
+        shift_history,
+        scale_current,
+        shift_current,
+        history_length,
+        tuple(norm.normalized_shape),
+        norm.eps,
+    )
 
 
 def apply_rotary_emb_helios(
@@ -586,6 +615,7 @@ class HeliosTransformerBlock(nn.Module):
         rotary_emb: torch.Tensor,
         original_context_length: int | None = None,
         cross_attn_key_value: tuple[torch.Tensor, torch.Tensor] | None = None,
+        modulation_history_length: int = 0,
     ) -> torch.Tensor:
         if temb.ndim == 4:
             shift_msa, scale_msa, gate_msa, c_shift_msa, c_scale_msa, c_gate_msa = (
@@ -603,7 +633,13 @@ class HeliosTransformerBlock(nn.Module):
             ).chunk(6, dim=1)
 
         # 1. Self-attention
-        norm_hidden_states = (self.norm1(hidden_states.float()) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
+        norm_hidden_states = norm_with_modulation(
+            self.norm1,
+            hidden_states,
+            scale_msa,
+            shift_msa,
+            modulation_history_length,
+        ).type_as(hidden_states)
         attn_output = self.attn1(norm_hidden_states, rotary_emb, original_context_length)
         hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
 
@@ -633,9 +669,13 @@ class HeliosTransformerBlock(nn.Module):
             hidden_states = hidden_states + attn_output
 
         # 3. Feed-forward
-        norm_hidden_states = (self.norm3(hidden_states.float()) * (1 + c_scale_msa) + c_shift_msa).type_as(
-            hidden_states
-        )
+        norm_hidden_states = norm_with_modulation(
+            self.norm3,
+            hidden_states,
+            c_scale_msa,
+            c_shift_msa,
+            modulation_history_length,
+        ).type_as(hidden_states)
         ff_output = self.ffn(norm_hidden_states)
         hidden_states = (hidden_states.float() + ff_output.float() * c_gate_msa).type_as(hidden_states)
 
@@ -1075,6 +1115,7 @@ class HeliosTransformer3DModel(nn.Module):
                 rotary_emb,
                 original_context_length,
                 cross_attn_key_value,
+                modulation_history_length=history_context_length if self.zero_history_timestep else 0,
             )
 
         # 7. Output normalization
