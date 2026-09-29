@@ -217,6 +217,11 @@ class HeliosPipeline(
         self.vae = AutoencoderKLWan.from_pretrained(
             model, subfolder="vae", torch_dtype=torch.float32, local_files_only=local_files_only
         ).to(self.device)
+        if current_omni_platform.is_npu():
+            from vllm_omni.diffusion.models.helios.vae_conv3d_padding import enable_internal_spatial_padding
+
+            converted = enable_internal_spatial_padding(self.vae)
+            logger.info("Enabled internal spatial padding for %d Helios VAE convolutions.", converted)
 
         transformer_config = load_transformer_config(model, "transformer", local_files_only)
         self.transformer = create_transformer_from_config(
