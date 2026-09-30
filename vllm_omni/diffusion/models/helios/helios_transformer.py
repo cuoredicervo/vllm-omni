@@ -29,7 +29,10 @@ from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.cache.cachedit import CacheDiTAdapterConfig
 from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelOutput
 from vllm_omni.diffusion.layers.rope import RotaryEmbeddingWan
-from vllm_omni.diffusion.models.helios.fused_ops import layer_norm_two_population_affine
+from vllm_omni.diffusion.models.helios.fused_ops import (
+    bf16_residual_gate,
+    layer_norm_two_population_affine,
+)
 
 if TYPE_CHECKING:
     from vllm.model_executor.layers.quantization.base_config import (
@@ -78,6 +81,21 @@ def norm_with_modulation(
         tuple(norm.normalized_shape),
         norm.eps,
     )
+
+
+def apply_residual_gate(
+    residual: torch.Tensor,
+    branch: torch.Tensor,
+    gate: torch.Tensor,
+) -> torch.Tensor:
+    """Keep the Ascend BF16 path free of redundant explicit casts."""
+    if (
+        residual.device.type == "npu"
+        and residual.dtype == torch.bfloat16
+        and branch.dtype == torch.bfloat16
+    ):
+        return bf16_residual_gate(residual, branch, gate)
+    return (residual.float() + branch.float() * gate).type_as(residual)
 
 
 def apply_rotary_emb_helios(
@@ -641,7 +659,7 @@ class HeliosTransformerBlock(nn.Module):
             modulation_history_length,
         ).type_as(hidden_states)
         attn_output = self.attn1(norm_hidden_states, rotary_emb, original_context_length)
-        hidden_states = (hidden_states.float() + attn_output * gate_msa).type_as(hidden_states)
+        hidden_states = apply_residual_gate(hidden_states, attn_output, gate_msa)
 
         # 2. Cross-attention (with optional guidance: only current chunk attends to text)
         if self.guidance_cross_attn and original_context_length is not None:
@@ -677,7 +695,7 @@ class HeliosTransformerBlock(nn.Module):
             modulation_history_length,
         ).type_as(hidden_states)
         ff_output = self.ffn(norm_hidden_states)
-        hidden_states = (hidden_states.float() + ff_output.float() * c_gate_msa).type_as(hidden_states)
+        hidden_states = apply_residual_gate(hidden_states, ff_output, c_gate_msa)
 
         return hidden_states
 
