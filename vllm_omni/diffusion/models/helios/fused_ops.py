@@ -23,7 +23,7 @@ def layer_norm_two_population_affine(
 
     def fused(piece: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
         return F.layer_norm(
-            piece.float(),
+            piece,
             normalized_shape,
             scale.reshape(normalized_shape),
             shift.reshape(normalized_shape),

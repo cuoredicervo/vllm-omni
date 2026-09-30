@@ -43,6 +43,6 @@ def test_layer_norm_affine_npu_matches_decomposed(history_length: int) -> None:
         history_length,
         (5120,),
         1e-6,
-    )
+    ).type_as(x)
 
-    torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+    torch.testing.assert_close(actual, expected.type_as(x), atol=0, rtol=0)
