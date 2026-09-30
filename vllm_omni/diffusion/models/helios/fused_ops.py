@@ -9,6 +9,21 @@ import torch
 import torch.nn.functional as F
 
 
+def bf16_residual_gate(
+    residual: torch.Tensor,
+    branch: torch.Tensor,
+    gate: torch.Tensor,
+) -> torch.Tensor:
+    """Apply a residual gate without explicitly promoting BF16 operands.
+
+    Keep the expression intact. Materializing the product in BF16 before the
+    addition introduces an extra rounding and is not equivalent.
+    """
+    if residual.dtype != torch.bfloat16 or branch.dtype != torch.bfloat16:
+        raise TypeError("BF16 residual gating requires BF16 residual and branch tensors")
+    return (residual + branch * gate).type_as(residual)
+
+
 def layer_norm_two_population_affine(
     x: torch.Tensor,
     scale_history: torch.Tensor | None,
