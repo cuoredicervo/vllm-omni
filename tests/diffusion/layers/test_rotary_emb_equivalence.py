@@ -17,6 +17,7 @@ import pytest
 import torch
 
 from vllm_omni.diffusion.layers import rope as rope_module
+from vllm_omni.diffusion.models.helios import perf_gates
 from vllm_omni.diffusion.models.helios.helios_transformer import HeliosRotaryEmbedding
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion, pytest.mark.cpu]
@@ -200,6 +201,25 @@ class TestHeliosRoPEEquivalence:
         monkeypatch.setattr(rope, "_can_use_npu_impl", lambda *_: True)
         monkeypatch.setattr(rope_module, "apply_rotary_emb_mindiesd", apply_mindie)
         monkeypatch.setattr(rope.impl, "_forward_method", rope.impl.forward_npu)
+        assert rope(hidden, freqs) is hidden
+
+    def test_bf16_frequency_approximation_requires_explicit_gate(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The opt-in path casts only the fused kernel's frequency inputs."""
+        hidden, freqs = _make_inputs(1, 16, 8, 64, dtype=torch.bfloat16)
+        _, freqs = _make_inputs(1, 16, 8, 64, dtype=torch.float32)
+        rope = HeliosRotaryEmbedding()
+
+        def rotary_embedding(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
+            assert x is hidden
+            assert cos.dtype == sin.dtype == torch.bfloat16
+            return x
+
+        monkeypatch.setattr(perf_gates, "BF16_ROPE_FREQUENCIES", True)
+        monkeypatch.setattr(rope, "_can_use_npu_impl", lambda *_: True)
+        monkeypatch.setattr(rope.impl, "_forward_method", rotary_embedding)
         assert rope(hidden, freqs) is hidden
 
     def test_odd_head_dim_raises(self) -> None:
