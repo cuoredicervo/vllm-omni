@@ -71,8 +71,16 @@ def norm_with_modulation(
     shift: torch.Tensor,
     history_length: int,
 ) -> torch.Tensor:
-    """Apply Helios modulation, fusing its affine into LayerNorm on Ascend."""
-    if hidden_states.device.type != "npu" or hidden_states.shape[0] != 1:
+    """Fuse modulation on validated Ascend 910 runtimes only.
+
+    Ascend 950DT changes BF16 outputs for this rewrite, so A5 and any unknown
+    future NPU retain the decomposed reference expression.
+    """
+    if (
+        hidden_states.device.type != "npu"
+        or hidden_states.shape[0] != 1
+        or not _is_validated_ascend_910_device(hidden_states.device)
+    ):
         return norm(hidden_states.float()) * (1 + scale) + shift
 
     scale_history = 1 + scale[:, :1] if history_length else None
