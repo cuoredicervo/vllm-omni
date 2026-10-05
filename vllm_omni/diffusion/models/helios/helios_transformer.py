@@ -170,6 +170,7 @@ class HeliosRotaryEmbedding(nn.Module):
         cos = freqs_cis[..., :head_dim:2].unsqueeze(-2)
         sin = freqs_cis[..., head_dim + 1 :: 2].unsqueeze(-2)
         if perf_gates.BF16_ROPE_FREQUENCIES:
+            logger.info_once("EXECUTED_HELIOS_BF16_ROPE_FREQUENCIES")
             cos = cos.type_as(hidden_states)
             sin = sin.type_as(hidden_states)
         return self.impl(hidden_states, cos, sin)
