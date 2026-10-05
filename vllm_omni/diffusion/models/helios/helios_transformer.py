@@ -29,6 +29,7 @@ from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.cache.cachedit import CacheDiTAdapterConfig
 from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelOutput
 from vllm_omni.diffusion.layers.rope import RotaryEmbeddingWan
+from vllm_omni.diffusion.models.helios import perf_gates
 from vllm_omni.diffusion.models.helios.fused_ops import (
     bf16_residual_gate,
     layer_norm_two_population_affine,
@@ -180,6 +181,13 @@ class HeliosRotaryEmbedding(nn.Module):
 
         cos = freqs_cis[..., :head_dim:2].unsqueeze(-2)
         sin = freqs_cis[..., head_dim + 1 :: 2].unsqueeze(-2)
+        if perf_gates.BF16_ROPE_FREQUENCIES:
+            logger.warning_once(
+                "HELIOS_BF16_ROPE_FREQUENCIES is active: fused Helios RoPE "
+                "uses BF16 cosine/sine tables and may change generated output."
+            )
+            cos = cos.type_as(hidden_states)
+            sin = sin.type_as(hidden_states)
         return self.impl(hidden_states, cos, sin)
 
 
