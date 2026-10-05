@@ -42,6 +42,18 @@ if TYPE_CHECKING:
 logger = init_logger(__name__)
 
 
+def _is_validated_ascend_910_name(device_name: str) -> bool:
+    """Return whether exact Helios fused-kernel evidence covers this SoC."""
+    return device_name.startswith("Ascend910")
+
+
+@lru_cache(maxsize=None)
+def _is_validated_ascend_910_device(device: torch.device) -> bool:
+    if device.type != "npu":
+        return False
+    return _is_validated_ascend_910_name(torch.npu.get_device_name(device))
+
+
 def pad_for_3d_conv(x, kernel_size):
     b, c, t, h, w = x.shape
     pt, ph, pw = kernel_size
@@ -62,8 +74,16 @@ def norm_with_modulation(
     shift: torch.Tensor,
     history_length: int,
 ) -> torch.Tensor:
-    """Apply Helios modulation, fusing its affine into LayerNorm on Ascend."""
-    if hidden_states.device.type != "npu" or hidden_states.shape[0] != 1:
+    """Fuse modulation on validated Ascend 910 runtimes only.
+
+    Ascend 950DT changes BF16 outputs for this rewrite, so A5 and any unknown
+    future NPU retain the decomposed reference expression.
+    """
+    if (
+        hidden_states.device.type != "npu"
+        or hidden_states.shape[0] != 1
+        or not _is_validated_ascend_910_device(hidden_states.device)
+    ):
         return norm(hidden_states.float()) * (1 + scale) + shift
 
     scale_history = 1 + scale[:, :1] if history_length else None
@@ -126,6 +146,7 @@ class HeliosRotaryEmbedding(nn.Module):
     def _can_use_npu_impl(hidden_states: torch.Tensor, freqs_cis: torch.Tensor) -> bool:
         return (
             hidden_states.device.type == "npu"
+            and _is_validated_ascend_910_device(hidden_states.device)
             and hidden_states.dim() == 4
             and freqs_cis.dim() == 3
             and hidden_states.dtype == torch.bfloat16
