@@ -199,6 +199,7 @@ class DistributedRMSNorm(nn.Module):
         if perf_gates.FUSED_RMS_NORM and tp_size == 1 and x.device.type == "npu":
             import torch_npu
 
+            logger.info_once("EXECUTED_HELIOS_FUSED_RMS_NORM_TP1")
             output = torch_npu.npu_rms_norm(x, gamma=self.weight, epsilon=self.eps)[0]
             return output.to(x.dtype)
 

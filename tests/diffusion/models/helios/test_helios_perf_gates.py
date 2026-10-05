@@ -61,3 +61,12 @@ def test_fused_rms_norm_gate_accepts_explicit_true(
 ) -> None:
     module = _load(monkeypatch, HELIOS_FUSED_RMS_NORM=value)
     assert module.FUSED_RMS_NORM is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", " FALSE "])
+def test_fused_rms_norm_gate_accepts_explicit_false(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    module = _load(monkeypatch, HELIOS_FUSED_RMS_NORM=value)
+    assert module.FUSED_RMS_NORM is False
