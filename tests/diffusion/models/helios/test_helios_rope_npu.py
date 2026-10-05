@@ -5,9 +5,25 @@ import pytest
 import torch
 
 from tests.helpers.mark import hardware_test
-from vllm_omni.diffusion.models.helios.helios_transformer import HeliosRotaryEmbedding
+from vllm_omni.diffusion.models.helios.helios_transformer import (
+    HeliosRotaryEmbedding,
+    _is_validated_ascend_910_name,
+)
 
 pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
+
+
+@pytest.mark.parametrize(
+    ("device_name", "expected"),
+    [
+        ("Ascend910B4-1", True),
+        ("Ascend910_9392", True),
+        ("Ascend950DT_9582", False),
+        ("NVIDIA A100-SXM4-80GB", False),
+    ],
+)
+def test_fused_rope_soc_allowlist(device_name: str, expected: bool) -> None:
+    assert _is_validated_ascend_910_name(device_name) is expected
 
 
 def _reference(hidden_states: torch.Tensor, freqs_cis: torch.Tensor) -> torch.Tensor:
