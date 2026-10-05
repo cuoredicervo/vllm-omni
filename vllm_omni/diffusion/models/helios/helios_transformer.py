@@ -142,6 +142,15 @@ class HeliosRotaryEmbedding(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.impl = RotaryEmbeddingWan(is_neox_style=False, half_head_dim=True)
+        logger.info_once(
+            "Helios approximate gate HELIOS_BF16_ROPE_FREQUENCIES=%s.",
+            int(perf_gates.BF16_ROPE_FREQUENCIES),
+        )
+        if perf_gates.BF16_ROPE_FREQUENCIES:
+            logger.warning_once(
+                "HELIOS_BF16_ROPE_FREQUENCIES is active: fused Helios RoPE "
+                "uses BF16 cosine/sine tables and may change generated output."
+            )
 
     @staticmethod
     def _can_use_npu_impl(hidden_states: torch.Tensor, freqs_cis: torch.Tensor) -> bool:
@@ -182,10 +191,6 @@ class HeliosRotaryEmbedding(nn.Module):
         cos = freqs_cis[..., :head_dim:2].unsqueeze(-2)
         sin = freqs_cis[..., head_dim + 1 :: 2].unsqueeze(-2)
         if perf_gates.BF16_ROPE_FREQUENCIES:
-            logger.warning_once(
-                "HELIOS_BF16_ROPE_FREQUENCIES is active: fused Helios RoPE "
-                "uses BF16 cosine/sine tables and may change generated output."
-            )
             cos = cos.type_as(hidden_states)
             sin = sin.type_as(hidden_states)
         return self.impl(hidden_states, cos, sin)

@@ -132,6 +132,7 @@ class TestHeliosRoPEEquivalence:
     def test_shared_rope_receives_half_width_interleaved_frequencies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The adapter must preserve Helios's adjacent-pair frequency layout."""
         hidden, freqs = _make_inputs(2, 16, 8, 64)
+        monkeypatch.setattr(perf_gates, "BF16_ROPE_FREQUENCIES", False)
         rope = HeliosRotaryEmbedding()
 
         def rotary_embedding(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
@@ -143,6 +144,19 @@ class TestHeliosRoPEEquivalence:
         monkeypatch.setattr(rope, "_can_use_npu_impl", lambda *_: True)
         monkeypatch.setattr(rope.impl, "_forward_method", rotary_embedding)
         assert rope(hidden, freqs) is hidden
+
+    def test_bf16_frequency_gate_keeps_ineligible_inputs_exact(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Opting in must not broaden the fused NPU eligibility boundary."""
+        hidden, _ = _make_inputs(2, 16, 8, 128, dtype=torch.bfloat16)
+        _, freqs = _make_inputs(2, 16, 8, 128, dtype=torch.float32)
+        expected = _apply_rotary_emb_helios_original(hidden, freqs)
+
+        monkeypatch.setattr(perf_gates, "BF16_ROPE_FREQUENCIES", True)
+        actual = HeliosRotaryEmbedding()(hidden, freqs)
+        torch.testing.assert_close(actual, expected, atol=0, rtol=0)
 
     def test_mixed_dtype_equivalence(self) -> None:
         """FP32 frequencies with BF16 activations match the prior arithmetic."""
