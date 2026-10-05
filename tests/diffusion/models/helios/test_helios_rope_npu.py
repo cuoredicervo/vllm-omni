@@ -18,6 +18,8 @@ pytestmark = [pytest.mark.core_model, pytest.mark.diffusion]
     [
         ("Ascend910B4-1", True),
         ("Ascend910_9392", True),
+        ("Ascend910", False),
+        ("Ascend910X", False),
         ("Ascend950DT_9582", False),
         ("NVIDIA A100-SXM4-80GB", False),
     ],
