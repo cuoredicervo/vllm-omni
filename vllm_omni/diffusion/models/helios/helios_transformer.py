@@ -43,8 +43,8 @@ logger = init_logger(__name__)
 
 
 def _is_validated_ascend_910_name(device_name: str) -> bool:
-    """Return whether exact Helios fused-kernel evidence covers this SoC."""
-    return device_name.startswith("Ascend910")
+    """Return whether exact Helios fused-kernel evidence covers this A2/A3 SoC."""
+    return device_name.startswith(("Ascend910B", "Ascend910_9392"))
 
 
 @lru_cache(maxsize=None)
