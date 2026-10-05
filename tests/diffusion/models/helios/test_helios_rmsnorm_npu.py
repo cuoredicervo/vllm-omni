@@ -33,7 +33,7 @@ def test_fused_tp1_rmsnorm_is_explicit_and_numerically_bounded(
 
     assert actual.shape == expected.shape
     assert actual.dtype == expected.dtype
-    torch.testing.assert_close(actual, expected, atol=0.03125, rtol=0)
+    torch.testing.assert_close(actual, expected, atol=2**-9, rtol=2**-7)
 
 
 @hardware_test(res={"npu": "A3"}, num_cards=1)

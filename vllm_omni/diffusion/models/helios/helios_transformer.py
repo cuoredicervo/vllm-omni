@@ -183,6 +183,15 @@ class DistributedRMSNorm(nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(hidden_size))
+        logger.info_once(
+            "Helios approximate gate HELIOS_FUSED_RMS_NORM=%s.",
+            int(perf_gates.FUSED_RMS_NORM),
+        )
+        if perf_gates.FUSED_RMS_NORM:
+            logger.warning_once(
+                "HELIOS_FUSED_RMS_NORM is requested: eligible TP1 NPU attention "
+                "uses the approximate Ascend RMSNorm kernel and may change generated output."
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         tp_size = get_tensor_model_parallel_world_size()
@@ -190,11 +199,8 @@ class DistributedRMSNorm(nn.Module):
         if perf_gates.FUSED_RMS_NORM and tp_size == 1 and x.device.type == "npu":
             import torch_npu
 
-            logger.warning_once(
-                "HELIOS_FUSED_RMS_NORM is active: TP1 Helios attention uses "
-                "the approximate Ascend RMSNorm kernel and may change generated output."
-            )
-            return torch_npu.npu_rms_norm(x, gamma=self.weight, epsilon=self.eps)[0]
+            output = torch_npu.npu_rms_norm(x, gamma=self.weight, epsilon=self.eps)[0]
+            return output.to(x.dtype)
 
         input_dtype = x.dtype
         x_float = x.float()
