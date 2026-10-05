@@ -24,3 +24,8 @@ def _read_flag(name: str) -> bool:
 # Ascend kernel. It improves performance but changes model output, so it must
 # never become an implicit platform default.
 BF16_ROPE_FREQUENCIES = _read_flag("HELIOS_BF16_ROPE_FREQUENCIES")
+
+# The Ascend native RMSNorm changes accumulation/rounding relative to Helios's
+# explicit FP32 reference expression. It is currently valid only for TP=1;
+# distributed TP must retain the reference reduction.
+FUSED_RMS_NORM = _read_flag("HELIOS_FUSED_RMS_NORM")

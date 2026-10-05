@@ -28,6 +28,7 @@ def _load(monkeypatch: pytest.MonkeyPatch, **environment: str):
 def test_approximate_optimizations_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load(monkeypatch)
     assert module.BF16_ROPE_FREQUENCIES is False
+    assert module.FUSED_RMS_NORM is False
 
 
 @pytest.mark.parametrize("value", ["1", "true", "yes", "on", " TRUE "])
@@ -51,3 +52,12 @@ def test_bf16_rope_frequency_gate_accepts_explicit_false(
 def test_invalid_approximation_gate_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="must be a boolean"):
         _load(monkeypatch, HELIOS_BF16_ROPE_FREQUENCIES="maybe")
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on", " TRUE "])
+def test_fused_rms_norm_gate_accepts_explicit_true(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    module = _load(monkeypatch, HELIOS_FUSED_RMS_NORM=value)
+    assert module.FUSED_RMS_NORM is True
