@@ -39,6 +39,15 @@ def test_bf16_rope_frequency_gate_accepts_explicit_true(
     assert module.BF16_ROPE_FREQUENCIES is True
 
 
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", " FALSE "])
+def test_bf16_rope_frequency_gate_accepts_explicit_false(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str,
+) -> None:
+    module = _load(monkeypatch, HELIOS_BF16_ROPE_FREQUENCIES=value)
+    assert module.BF16_ROPE_FREQUENCIES is False
+
+
 def test_invalid_approximation_gate_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="must be a boolean"):
         _load(monkeypatch, HELIOS_BF16_ROPE_FREQUENCIES="maybe")
