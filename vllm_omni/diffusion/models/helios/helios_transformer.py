@@ -29,6 +29,7 @@ from vllm_omni.diffusion.attention.layer import Attention
 from vllm_omni.diffusion.cache.cachedit import CacheDiTAdapterConfig
 from vllm_omni.diffusion.distributed.sp_plan import SequenceParallelOutput
 from vllm_omni.diffusion.layers.rope import RotaryEmbeddingWan
+from vllm_omni.diffusion.models.helios import perf_gates
 from vllm_omni.diffusion.models.helios.fused_ops import (
     bf16_residual_gate,
     layer_norm_two_population_affine,
@@ -190,9 +191,25 @@ class DistributedRMSNorm(nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(hidden_size))
+        logger.info_once(
+            "Helios approximate gate HELIOS_FUSED_RMS_NORM=%s.",
+            int(perf_gates.FUSED_RMS_NORM),
+        )
+        if perf_gates.FUSED_RMS_NORM:
+            logger.warning_once(
+                "HELIOS_FUSED_RMS_NORM is requested: eligible TP1 NPU attention "
+                "uses the approximate Ascend RMSNorm kernel and may change generated output."
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         tp_size = get_tensor_model_parallel_world_size()
+
+        if perf_gates.FUSED_RMS_NORM and tp_size == 1 and x.device.type == "npu":
+            import torch_npu
+
+            logger.info_once("EXECUTED_HELIOS_FUSED_RMS_NORM_TP1")
+            output = torch_npu.npu_rms_norm(x, gamma=self.weight, epsilon=self.eps)[0]
+            return output.to(x.dtype)
 
         input_dtype = x.dtype
         x_float = x.float()
